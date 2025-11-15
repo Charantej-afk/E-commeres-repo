@@ -2,43 +2,58 @@ pipeline {
     agent any
 
     environment {
-        // Jenkins credentials
+        // Credentials
         SONAR_TOKEN = credentials('SONAR_TOKEN')
         NEXUS_CRED  = credentials('NEXUS_CRED')
         DOCKER_HUB  = credentials('DOCKER_HUB')
 
-        // App info
-        APP_NAME    = "ecommerce-app"
-        VERSION     = "1.0.${BUILD_NUMBER}"
+        // App Variables
+        APP_NAME = "ecommerce-app"
+        VERSION  = "1.0.${BUILD_NUMBER}"
 
-        // Internal Docker network endpoints
-        SONAR_URL   = "http://sonarqube:9000"
-        NEXUS_URL   = "http://nexus:8081"
-        IMAGE       = "charantej/ecommerce-app"
+        SONAR_URL = "http://sonarqube:9000"
+        NEXUS_URL = "http://nexus:8081"
+
+        IMAGE = "charantej/ecommerce-app"
     }
 
     stages {
 
-        /* ------------------------ CHECKOUT ------------------------ */
+        /* ----------------------------------------------------------
+         * Checkout Code
+         * ---------------------------------------------------------- */
         stage('Checkout Code') {
             steps {
                 git url: 'https://github.com/Charantej-afk/E-commeres-repo.git', branch: 'main'
             }
         }
 
-        /* ------------------------ BUILD ------------------------ */
+        /* ----------------------------------------------------------
+         * Maven Build
+         * ---------------------------------------------------------- */
         stage('Maven Build') {
             steps {
-                sh "mvn clean package -DskipTests"
+                script {
+                    mvnHome = tool 'Maven-3'
+                }
+                sh """
+                    ${mvnHome}/bin/mvn clean package -DskipTests
+                """
             }
         }
 
-        /* ------------------------ SONAR ------------------------ */
+        /* ----------------------------------------------------------
+         * SonarQube Scan
+         * ---------------------------------------------------------- */
         stage('SonarQube Scan') {
-            steps {  
+            steps {
+                script {
+                    mvnHome = tool 'Maven-3'
+                }
                 withSonarQubeEnv('My SonarQube Server') {
                     sh """
-                        mvn sonar:sonar \
+                        ${mvnHome}/bin/mvn sonar:sonar \
+                        -Dsonar.projectKey=ecommerce-app \
                         -Dsonar.host.url=${SONAR_URL} \
                         -Dsonar.login=${SONAR_TOKEN}
                     """
@@ -46,6 +61,9 @@ pipeline {
             }
         }
 
+        /* ----------------------------------------------------------
+         * SonarQube Quality Gate
+         * ---------------------------------------------------------- */
         stage('Quality Gate') {
             steps {
                 timeout(time: 5, unit: 'MINUTES') {
@@ -54,7 +72,9 @@ pipeline {
             }
         }
 
-        /* ------------------------ UPLOAD TO NEXUS ------------------------ */
+        /* ----------------------------------------------------------
+         * Upload WAR to Nexus
+         * ---------------------------------------------------------- */
         stage('Upload WAR to Nexus') {
             steps {
                 sh """
@@ -65,7 +85,9 @@ pipeline {
             }
         }
 
-        /* ------------------------ DOWNLOAD FROM NEXUS ------------------------ */
+        /* ----------------------------------------------------------
+         * Download WAR from Nexus
+         * ---------------------------------------------------------- */
         stage('Download WAR from Nexus') {
             steps {
                 sh "rm -f ${APP_NAME}.war || true"
@@ -78,7 +100,9 @@ pipeline {
             }
         }
 
-        /* ------------------------ BUILD DOCKER IMAGE ------------------------ */
+        /* ----------------------------------------------------------
+         * Build Docker Image
+         * ---------------------------------------------------------- */
         stage('Build Docker Image') {
             steps {
                 sh """
@@ -88,19 +112,22 @@ pipeline {
             }
         }
 
-        /* ------------------------ PUSH DOCKER IMAGE ------------------------ */
+        /* ----------------------------------------------------------
+         * Push Docker Image
+         * ---------------------------------------------------------- */
         stage('Push Docker Image') {
             steps {
                 sh """
                     echo ${DOCKER_HUB} | docker login -u charantej --password-stdin
-
                     docker push ${IMAGE}:${VERSION}
                     docker push ${IMAGE}:latest
                 """
             }
         }
 
-        /* ------------------------ DEPLOY ------------------------ */
+        /* ----------------------------------------------------------
+         * Deploy Docker Container
+         * ---------------------------------------------------------- */
         stage('Deploy to Docker') {
             steps {
                 sh """
